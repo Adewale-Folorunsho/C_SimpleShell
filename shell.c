@@ -1,3 +1,7 @@
+/*
+ * Worked with Adewale Folorunsho
+ */
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,19 +11,25 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <errno.h>
-// Author, Adewale Folorunsho @02882123
-// collaborated with Chidindu Alim.
+
 #define MAX_COMMAND_LINE_LEN 1024
 #define MAX_COMMAND_LINE_ARGS 128
 
 char prompt[] = "> ";
 char delimiters[] = " \t\r\n";
+char pipe_delimiters[] = "|\t\r\n";
 extern char **environ;
 pid_t pid;
+char cwd[256];
+int gt;
+int filefd;
+int stdOutFd;
 
-void ChildProcess(char *instr[], int size, char *command_tok[], bool isBackground);
+void ChildProcess(char *instr[], int size, char *command_tok[], bool isBackground, int filefd, int stdOutFd, int gt);
 void signal_ctrlc(int signum);
 void signal_alarm(int signum);
+void pipedCommands(char *pipe_arguments);
+void pipedCommandsIndex(char *pipe_command_tok);
 
 int main() {
     // Stores the string typed into the command line.
@@ -36,7 +46,7 @@ int main() {
       
         do{ 
             // Print the shell prompt.
-            char cwd[256];
+            
             if( getcwd(cwd, sizeof(cwd)) == NULL)
               perror("getcwd() error");
             else
@@ -75,6 +85,7 @@ int main() {
         int i = 0;
         int j = 0;
         int numArgs = 0;
+        gt = 0;
     
         while (arguments) {
           char checkVar = *arguments;
@@ -94,6 +105,9 @@ int main() {
 					}else{
 						*envEq = arguments;
 					}
+          if(strcmp(*envEq, ">") == 0){
+            gt = 1;
+          }
           command_tok[i++] = *envEq;
           arguments = strtok(NULL, delimiters);
           numArgs++;
@@ -108,13 +122,25 @@ int main() {
         //pwd
 
 				char cwd[256];
+        stdOutFd = dup(STDOUT_FILENO);
+        filefd;
+        bool useChildPprocess;
+				if (gt == 1){
+          filefd = open(command_tok[numArgs - 1], O_WRONLY | O_CREAT | O_TRUNC, 0666);
+          command_tok[numArgs - 1] = NULL;
+          command_tok[numArgs - 2] = NULL;
+          
+          dup2(filefd, STDOUT_FILENO);
+          // pipedCommands(pipe_arguments);  //only calling the function here. Might want to pass it's return statement to something
+        }
 
-				if(strcmp(*instr, "pwd") == 0){
+        //Pipe extra credit
+        if(strcmp(*instr, "pwd") == 0){
 					if( getcwd(cwd, sizeof(cwd)) == NULL)
               perror("getcwd() error");
             else
              printf("%s\n", cwd);
-				}
+				} 
         
         //setenv
         else if (strcmp(*instr, "setenv") == 0) {  //check if command is exit
@@ -172,17 +198,24 @@ int main() {
           //free(0);
           exit(0);
         }
+    
         else{
+          useChildPprocess = true;
           pid = fork();
           //check for child process
           if (pid == 0){
-            ChildProcess(instr, numArgs, command_tok, isBackground);
+            ChildProcess(instr, numArgs, command_tok, isBackground, filefd, stdOutFd, gt);
           }else{
             //check if it is a background. if it isn't, wait for the child process
             if(!isBackground){
               wait(&status);
             }
           }
+        }
+        if (gt == 1) {
+          dup2(stdOutFd, STDOUT_FILENO);
+          close(filefd);
+          close(stdOutFd);
         }
         
       
@@ -220,11 +253,10 @@ void signal_alarm(int signum){
 }
 
 void signal_ctrlc(int signum){
-  printf("\n");
-  kill(pid, SIGKILL);
+  kill -9 %1;
 }
 
-void ChildProcess(char *instr[], int size, char *command_tok[], bool isBackground){
+void ChildProcess(char *instr[], int size, char *command_tok[], bool isBackground, int filefd, int stdOutFd, int gt){
   int x = 1;
   int checkExecVp = 0;
   char cwd[256];
@@ -234,9 +266,15 @@ void ChildProcess(char *instr[], int size, char *command_tok[], bool isBackgroun
   if(!isBackground){
     alarm(10);
   }
-  
-  if(execvp(command_tok[0], command_tok) == -1){
+   
+ bool execfail = execvp(command_tok[0], command_tok) == -1;
+
+ if (gt == 1) {
+    dup2(stdOutFd, STDOUT_FILENO);
+    close(stdOutFd);
+    close(filefd);
+  }
+  if(execfail){
     printf("Invalid command: %d\n", errno);
   } 
 }
-
